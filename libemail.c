@@ -217,7 +217,7 @@ email_t email_new(FILE ** op)
       e->body = malloc(sizeof(*e->body));
       memset(e->body, 0, sizeof(*e->body));
       *op = e->body->file = open_memstream(&e->body->data, &e->body->len);
-      e->mimetype = strdup("text/plain; charset=utf-8");
+      e->mimetype = strdup("text/plain; charset=UTF-8");
       e->body->isinline = 1;
    }
    email_header(e, "MIME-Version", "1.0");
@@ -381,38 +381,47 @@ const char *email_send_save(email_t e, int flags, const char *copy)
       if (e->head)
          fwrite(e->head->data, e->head->len, 1, o);
       // Check if can be sent without encoding
-      unsigned char *p = NULL,
-          *z = NULL,
-          utf8 = 0;
+      char utf8 = 0,            // Had UTF8
+          longline = 0,         // Has long lines
+          binary = 0;           // Has non UTF8 or special characters
       if (e->body)
       {
+         unsigned char *p = NULL,
+             *z = NULL;
          unsigned char *sol = (unsigned char *) e->body->data;
          z = (unsigned char *) e->body->data + e->body->len;
-         for (p = (unsigned char *) e->body->data; p < z && p < sol + 200 && *p; p++)
+         for (p = (unsigned char *) e->body->data; p < z; p++)
+         {
             if (*p == '\r' || *p == '\n')
-               sol = p + 1;
-            else if (*p < ' ' && *p != '\t')
-               break;           // Only allow some control characters to be on safe side
+            {
+               sol = p;
+               continue;
+            }
+            if (*p < ' ' && *p != '\t')
+               binary = 1;      // Only allow some control characters to be on safe side
             else if (*p > 0xF0)
             {                   // UTF8
                utf8 = 1;
                if (p + 3 >= z || p[1] < 0x80 || p[1] >= 0xC0 || p[2] < 0x80 || p[2] >= 0xC0 || p[3] < 0x80 || p[3] >= 0xC0)
-                  break;
+                  binary = 1;
                p += 3;
             } else if (*p > 0xE0)
             {                   // UTF8
                utf8 = 1;
                if (p + 2 >= z || p[1] < 0x80 || p[1] >= 0xC0 || p[2] < 0x80 || p[2] >= 0xC0)
-                  break;
+                  binary = -1;
                p += 2;
             } else if (*p > 0xC0)
             {                   // UTF8
                utf8 = 1;
                if (p + 1 >= z || p[1] < 0x80 || p[1] >= 0xC0)
-                  break;
+                  binary = 1;
                p += 1;
             } else if (*p >= 0x80)
-               break;           // Some other combination not valid UTF-8
+               binary = 1;
+            if (p - sol > 998)
+               longline = 1;
+         }
       }
       if (e->mimetype)
       {
@@ -424,14 +433,14 @@ const char *email_send_save(email_t e, int flags, const char *copy)
             fclose(f);
          }
          fprintf(o, "Content-Type: %s", e->mimetype);
-         if (p == z && utf8 && !strncasecmp(e->mimetype, "text/", 5))
+         if (utf8 && !binary && !strncasecmp(e->mimetype, "text/", 5))
             fprintf(o, "; charset=UTF-8");
          if (e->sub)
             fprintf(o, "; boundary=CUT-HERE-%llu", e->part);
          fprintf(o, CRLF);
       }
-      if (p == z && e->mimetype && ((e->body && e->body->text) || (!strncasecmp(e->mimetype, "text/", 5) && !(flags & EMAIL_PGPMIME)) || !strncasecmp(e->mimetype, "message/", 8) || !strncasecmp(e->mimetype, "application/pgp", 15) || !strncasecmp(e->mimetype, "multipart/encrypted", 19)))
-      {
+      if (!binary && !longline && e->mimetype && ((e->body && e->body->text) || (!strncasecmp(e->mimetype, "text/", 5) && !(flags & EMAIL_PGPMIME)) || !strncasecmp(e->mimetype, "message/", 8) || !strncasecmp(e->mimetype, "application/pgp", 15) || !strncasecmp(e->mimetype, "multipart/encrypted", 19)))
+      {                         // Ok to send as is
          if (e->body && (e->body->isinline || e->body->filename))
          {
             fprintf(o, "Content-Disposition: %s", e->body->isinline ? "inline" : "attachment");
@@ -439,13 +448,13 @@ const char *email_send_save(email_t e, int flags, const char *copy)
                fprintf(o, ";filename=\"%s\"", e->body->filename);
             fprintf(o, CRLF);
          }
-         if (p < z)
+         if (utf8)
             fprintf(o, "Content-Transfer-Encoding: binary" CRLF);
          fprintf(o, CRLF);
          if (e->body && e->body->data)
             fwrite(e->body->data, e->body->len, 1, o);
       } else if (e->body && e->body->data)
-      {
+      {                         // Encode
          fprintf(o, "Content-Disposition: %s", e->body->isinline ? "inline" : "attachment");
          if (e->body->filename)
             fprintf(o, ";filename=\"%s\"", e->body->filename);
