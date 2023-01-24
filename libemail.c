@@ -380,23 +380,10 @@ const char *email_send_save(email_t e, int flags, const char *copy)
    void sendmime(email_t e, FILE * o) {
       if (e->head)
          fwrite(e->head->data, e->head->len, 1, o);
-      if (e->mimetype)
-      {
-         if (!e->part)
-         {
-            FILE *f = fopen("/dev/urandom", "r");
-            if (fread(&e->part, sizeof(e->part), 1, f) != 1)
-               err(1, "random");
-            fclose(f);
-         }
-         fprintf(o, "Content-Type: %s", e->mimetype);
-         if (e->sub)
-            fprintf(o, "; boundary=CUT-HERE-%llu", e->part);
-         fprintf(o, CRLF);
-      }
       // Check if can be sent without encoding
       unsigned char *p = NULL,
-          *z = NULL;
+          *z = NULL,
+          utf8 = 0;
       if (e->body)
       {
          unsigned char *sol = (unsigned char *) e->body->data;
@@ -408,21 +395,40 @@ const char *email_send_save(email_t e, int flags, const char *copy)
                break;           // Only allow some control characters to be on safe side
             else if (*p > 0xF0)
             {                   // UTF8
+               utf8 = 1;
                if (p + 3 >= z || p[1] < 0x80 || p[1] >= 0xC0 || p[2] < 0x80 || p[2] >= 0xC0 || p[3] < 0x80 || p[3] >= 0xC0)
                   break;
                p += 3;
             } else if (*p > 0xE0)
             {                   // UTF8
+               utf8 = 1;
                if (p + 2 >= z || p[1] < 0x80 || p[1] >= 0xC0 || p[2] < 0x80 || p[2] >= 0xC0)
                   break;
                p += 2;
             } else if (*p > 0xC0)
             {                   // UTF8
+               utf8 = 1;
                if (p + 1 >= z || p[1] < 0x80 || p[1] >= 0xC0)
                   break;
                p += 1;
             } else if (*p >= 0x80)
                break;           // Some other combination not valid UTF-8
+      }
+      if (e->mimetype)
+      {
+         if (!e->part)
+         {
+            FILE *f = fopen("/dev/urandom", "r");
+            if (fread(&e->part, sizeof(e->part), 1, f) != 1)
+               err(1, "random");
+            fclose(f);
+         }
+         fprintf(o, "Content-Type: %s", e->mimetype);
+         if (p == z && utf8 && !strncasecmp(e->mimetype, "text/", 5))
+            fprintf(o, "; charset=UTF-8");
+         if (e->sub)
+            fprintf(o, "; boundary=CUT-HERE-%llu", e->part);
+         fprintf(o, CRLF);
       }
       if (p == z && e->mimetype && ((e->body && e->body->text) || (!strncasecmp(e->mimetype, "text/", 5) && !(flags & EMAIL_PGPMIME)) || !strncasecmp(e->mimetype, "message/", 8) || !strncasecmp(e->mimetype, "application/pgp", 15) || !strncasecmp(e->mimetype, "multipart/encrypted", 19)))
       {
