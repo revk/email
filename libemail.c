@@ -433,7 +433,7 @@ const char *email_send_save(email_t e, int flags, const char *copy)
             fclose(f);
          }
          fprintf(o, "Content-Type: %s", e->mimetype);
-         if (utf8 && !binary && !strncasecmp(e->mimetype, "text/", 5))
+         if (utf8 && !binary && !strncasecmp(e->mimetype, "text/", 5) && !strstr(e->mimetype, "charset="))
             fprintf(o, "; charset=UTF-8");
          if (e->sub)
             fprintf(o, "; boundary=CUT-HERE-%llu", e->part);
