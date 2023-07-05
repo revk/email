@@ -10,5 +10,11 @@ libemaillight.o: libemail.c
 libemail.o: libemail.c
 	cc -fPIC -O -DLIB -c -o $@ $< ${CCOPTS}
 
+ifneq ($(wildcard /usr/bin/gpgme-config),)
+GPGME=${shell gpgme-config --libs --cflags}
+else
+GPGME=-L/usr/lib/x86_64-linux-gnu -lgpgme -lassuan -lgpg-error
+endif
+
 email: libemail.c
-	cc -O -o $@ $< ${OPTS} -lm -lcrypto -lcurl ${shell gpgme-config --libs --cflags}
+	cc -O -o $@ $< ${OPTS} -lm -lcrypto -lcurl ${GPGME}
