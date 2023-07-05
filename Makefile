@@ -13,8 +13,8 @@ libemail.o: libemail.c
 ifneq ($(wildcard /usr/bin/gpgme-config),)
 GPGME=${shell gpgme-config --libs --cflags}
 else
-GPGME=-L/usr/lib/x86_64-linux-gnu -lgpgme -lassuan -lgpg-error
+GPGME=-lgpgme -lassuan -lgpg-error
 endif
 
-email: libemail.c
+email: libemail.c Makefile
 	cc -O -o $@ $< ${OPTS} -lm -lcrypto -lcurl ${GPGME}
